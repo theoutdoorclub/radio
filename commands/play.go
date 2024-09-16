@@ -6,7 +6,6 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
-	"github.com/disgoorg/disgolink/v3/disgolink"
 	"github.com/disgoorg/disgolink/v3/lavalink"
 
 	"github.com/theoutdoorclub/radio/radio"
@@ -47,70 +46,103 @@ func init() {
 		}
 
 		// context that automatically cancels after timeout
-		// TODO: playlist support
 		ctx, cancelFn := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancelFn()
 
-		var toPlay *lavalink.Track
+		loadResult, err := it.Lavalink.Client.BestNode().LoadTracks(ctx, identifier)
 
-		it.Lavalink.Client.BestNode().LoadTracksHandler(ctx, identifier, disgolink.NewResultHandler(
-			func(track lavalink.Track) {
-				// Loaded a single track
-				toPlay = &track
-			},
-			func(playlist lavalink.Playlist) {
-				// Loaded a playlist
-			},
-			func(tracks []lavalink.Track) {
-				// Loaded a search result
-			},
-			func() {
-				// nothing matching the query found
-			},
-			func(err error) {
-				// something went wrong while loading the track
-			},
-		))
+		if err != nil {
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+				SetContent("Something went wrong while loading").
+				SetEphemeral(true).
+				Build(),
+			)
 
+			return err
+		}
+
+		queue := it.QueueManager.GetOrCreate(*e.GuildID())
+
+		// wtf this is some black magic shit
+		switch d := loadResult.Data.(type) {
+		case lavalink.Track:
+			queue.Insert(e.User(), d)
+
+		case lavalink.Playlist:
+			for _, track := range d.Tracks {
+				queue.Insert(e.User(), track)
+			}
+
+		case lavalink.Search:
+
+		case lavalink.Empty:
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+				SetContent("Nothing was found for this identifier").
+				SetEphemeral(true).
+				Build(),
+			)
+
+			return nil
+
+		case lavalink.Exception:
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+				SetContent("Something went wrong while loading").
+				SetEphemeral(true).
+				Build(),
+			)
+
+			return err
+		}
+
+		player := it.Lavalink.Client.Player(*e.GuildID())
+		if player.Track() != nil {
+			// already playing a track, don't override it
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+				SetContent("Queued").
+				SetEphemeral(true).
+				Build(),
+			)
+
+			return nil
+		}
+
+		// isn't playing a track already, play the first one in queue
 		// join vc
 		voiceState, ok := it.Client.Caches().VoiceState(*e.GuildID(), e.User().ID)
 
 		if !ok {
-			_, err := e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
 				SetContent("You are not in a voice channel").
 				SetEphemeral(true).
 				Build(),
 			)
-			if err != nil {
-				return err
-			}
+
+			return nil
 		}
 
-		err := it.Client.UpdateVoiceState(context.TODO(), *e.GuildID(), voiceState.ChannelID, false, true)
+		err = it.Client.UpdateVoiceState(context.TODO(), *e.GuildID(), voiceState.ChannelID, false, true)
 		if err != nil {
-			_, err := e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
 				SetContent("Failed to join voice channel plz check permissions").
 				SetEphemeral(true).
 				Build(),
 			)
-			if err != nil {
-				return err
-			}
+
+			return err
 		}
 
 		// play
-		player := it.Lavalink.Client.Player(*e.GuildID())
-		err = player.Update(context.Background(), lavalink.WithTrack(*toPlay))
+		toPlay := queue.QueuedTracks[0]
+		err = player.Update(context.Background(), lavalink.WithTrack(toPlay.Track))
 
 		if err != nil {
-			_, err := e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
+			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
 				SetContent("Player refused to play").
 				SetEphemeral(true).
 				Build(),
 			)
-			if err != nil {
-				return err
-			}
+
+			return err
 		}
 
 		_, err = e.CreateFollowupMessage(discord.NewMessageCreateBuilder().

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/theoutdoorclub/radio/commands"
 	"github.com/theoutdoorclub/radio/radio"
+	"github.com/theoutdoorclub/radio/radio/queue"
 	"github.com/theoutdoorclub/radio/shared"
 )
 
@@ -32,7 +34,11 @@ func init() {
 
 func main() {
 	shared.Logger.Info().Msg("hhm yes")
-	it := radio.Radio{}
+	it := radio.Radio{
+		QueueManager: queue.QueueManager{
+			Queues: map[snowflake.ID]*queue.Queue{},
+		},
+	}
 
 	conf, err := radio.ParseConfig()
 	if err == nil {
@@ -100,7 +106,10 @@ func main() {
 
 	// connect to lavalink nodes as defined in config
 	for _, nodeCfg := range conf.Nodes {
-		node, err := lavalinkClient.AddNode(context.Background(), disgolink.NodeConfig{
+		ctx, cancelFn := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelFn()
+
+		node, err := lavalinkClient.AddNode(ctx, disgolink.NodeConfig{
 			Name:      nodeCfg.Name,
 			Address:   nodeCfg.Address,
 			Password:  nodeCfg.Password,
@@ -117,6 +126,7 @@ func main() {
 	}
 
 	it.Lavalink.Client = lavalinkClient
+	it.SetupListeners()
 
 	commands.Router.DefaultContext(func() context.Context {
 		// this context is made available to every handler so we can access the Radio object
@@ -129,46 +139,8 @@ func main() {
 
 	shared.Logger.Info().Msg("its up yo")
 
-	// vvv TEST TEST TEST TEST TEST vvv
-	/*
-		var toPlay *lavalink.Track
-		node.LoadTracksHandler(context.Background(), "https://www.youtube.com/watch?v=XDd9Yb0JvjE", disgolink.NewResultHandler(
-			func(track lavalink.Track) {
-				// Loaded a single track
-				toPlay = &track
-			},
-			func(playlist lavalink.Playlist) {
-				// HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE HERE
-				// Loaded a playlist
-			},
-			func(tracks []lavalink.Track) {
-				// Loaded a search result
-			},
-			func() {
-				// nothing matching the query found
-			},
-			func(err error) {
-				// something went wrong while loading the track
-				shared.Logger.Err(err).Msg("")
-			},
-		))
-
-		if toPlay == nil {
-			panic("WTF")
-		}
-		// WHY ISNT IT WORKING
-		client.UpdateVoiceState(context.Background(), snowflake.MustParse("741967925690368070"), json.Ptr(snowflake.MustParse("998214208690864148")), false, true)
-
-		player := lavalinkClient.Player(snowflake.MustParse("741967925690368070"))
-		player.Update(context.Background(), lavalink.WithTrack(*toPlay))
-	*/
-	// ^^^ TEST TEST TEST TEST TEST ^^^
-
 	//
 	s := make(chan os.Signal, 1)
 	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM)
 	<-s
 }
-
-// used to silence unused complaints :ogre:
-func noop(t any) {}
