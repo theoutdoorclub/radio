@@ -53,9 +53,9 @@ func init() {
 			return nil
 		}
 
-		it := e.Ctx.Value(shared.RadioKey).(radio.Radio)
+		it := e.Ctx.Value(shared.RadioKey).(*radio.Radio)
 		player := it.Lavalink.Client.ExistingPlayer(*e.GuildID())
-		q := it.QueueManager.Queues[*e.GuildID()]
+		q := it.Queues[*e.GuildID()]
 
 		if player == nil || q == nil {
 			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().

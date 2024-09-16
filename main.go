@@ -11,13 +11,14 @@ import (
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
-	"github.com/disgoorg/disgo/events"
 	"github.com/disgoorg/disgo/gateway"
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/disgolink/v3/disgolink"
 	"github.com/disgoorg/snowflake/v2"
+	"github.com/maniartech/signals"
 
 	"github.com/theoutdoorclub/radio/commands"
+	"github.com/theoutdoorclub/radio/handlers"
 	"github.com/theoutdoorclub/radio/radio"
 	"github.com/theoutdoorclub/radio/radio/queue"
 	"github.com/theoutdoorclub/radio/shared"
@@ -32,26 +33,21 @@ func init() {
 	flag.Parse()
 }
 
-func main() {
-	shared.Logger.Info().Msg("hhm yes")
-	it := radio.Radio{
-		QueueManager: queue.QueueManager{
-			Queues: map[snowflake.ID]*queue.Queue{},
-		},
-	}
-
+func parseConfig(it *radio.Radio) {
 	conf, err := radio.ParseConfig()
 	if err == nil {
 		it.Config = conf
 	} else {
 		shared.Logger.Fatal().Err(err).Msg("Failed to parse config")
 	}
+}
 
+func createClient(it *radio.Radio) {
 	token := ""
 	if os.Getenv("TOKEN") != "" {
 		token = os.Getenv("TOKEN")
 	} else {
-		token = conf.Credentials.Token
+		token = it.Config.Credentials.Token
 	}
 
 	client, err := disgo.New(token,
@@ -69,43 +65,30 @@ func main() {
 	}
 
 	it.Client = client
+}
 
-	// sync commands to discord
+func syncCommands(it *radio.Radio) {
 	if *shouldSyncCommands {
-		if err = handler.SyncCommands(client, commands.Registry, []snowflake.ID{}); err != nil {
+		if err := handler.SyncCommands(it.Client, commands.Registry, []snowflake.ID{}); err != nil {
 			shared.Logger.Err(err).Msg("Failed to sync commands")
-			return
 		}
 	}
+}
 
-	defer client.Close(context.Background())
+func setupLavalink(it *radio.Radio) {
+	lavalinkClient := disgolink.New(it.Client.ApplicationID())
 
-	// connect to the gateway
-	if err = client.OpenGateway(context.Background()); err != nil {
-		shared.Logger.Fatal().Err(err).Msg("Failed to connect to gateway")
-	}
+	it.Client.AddEventListeners(
+		handlers.OnGuildVoiceStateUpdate(it),
+		handlers.OnGuildVoiceServerUpdate(it),
+	)
 
-	// lavalink stuff
-	lavalinkClient := disgolink.New(client.ApplicationID())
-
-	client.AddEventListeners(
-		// onVoiceStateUpdate
-		bot.NewListenerFunc(func(event *events.GuildVoiceStateUpdate) {
-			// filter all non bot voice state updates out
-			if event.VoiceState.UserID != client.ApplicationID() {
-				return
-			}
-			lavalinkClient.OnVoiceStateUpdate(context.TODO(), event.VoiceState.GuildID, event.VoiceState.ChannelID, event.VoiceState.SessionID)
-		}),
-
-		// onVoiceServerUpdate
-		bot.NewListenerFunc(func(event *events.VoiceServerUpdate) {
-			lavalinkClient.OnVoiceServerUpdate(context.TODO(), event.GuildID, event.Token, *event.Endpoint)
-		}),
+	lavalinkClient.AddListeners(
+		handlers.OnTrackEnded(it),
 	)
 
 	// connect to lavalink nodes as defined in config
-	for _, nodeCfg := range conf.Nodes {
+	for _, nodeCfg := range it.Config.Nodes {
 		ctx, cancelFn := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancelFn()
 
@@ -126,7 +109,26 @@ func main() {
 	}
 
 	it.Lavalink.Client = lavalinkClient
-	it.SetupListeners()
+}
+
+func main() {
+	shared.Logger.Info().Msg("hhm yes")
+	it := &radio.Radio{
+		Queues:             map[snowflake.ID]*queue.Queue{},
+		AddedToQueueSignal: signals.New[snowflake.ID](),
+	}
+
+	parseConfig(it)
+	createClient(it)
+	syncCommands(it)
+	setupLavalink(it)
+
+	defer it.Client.Close(context.Background())
+
+	// connect to the gateway
+	if err := it.Client.OpenGateway(context.Background()); err != nil {
+		shared.Logger.Fatal().Err(err).Msg("Failed to connect to gateway")
+	}
 
 	commands.Router.DefaultContext(func() context.Context {
 		// this context is made available to every handler so we can access the Radio object
@@ -135,7 +137,10 @@ func main() {
 		return ctx
 	})
 
-	client.AddEventListeners(commands.Router)
+	it.Client.AddEventListeners(commands.Router)
+
+	// other event listeners/handlers here
+	handlers.OnAddedToQueue(it)
 
 	shared.Logger.Info().Msg("its up yo")
 

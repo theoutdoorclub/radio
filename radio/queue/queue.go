@@ -15,16 +15,18 @@ const (
 )
 
 type QueuedTrack struct {
-	Queuer discord.User
-	Track  lavalink.Track
+	Queuer        discord.User
+	Track         lavalink.Track
+	OriginChannel snowflake.ID
 }
 
 type Queue struct {
-	QueuedTracks []QueuedTrack
-	RepeatType   RepeatType
+	QueuedTracks  []QueuedTrack
+	RepeatType    RepeatType
+	OriginChannel snowflake.ID
 }
 
-func (queue *Queue) Next() (QueuedTrack, bool) {
+func (queue *Queue) NextAndPop() (QueuedTrack, bool) {
 	// empty queue or has reached the end of the queue already
 	if len(queue.QueuedTracks) == 0 {
 		return QueuedTrack{}, false
@@ -36,32 +38,10 @@ func (queue *Queue) Next() (QueuedTrack, bool) {
 	return track, true
 }
 
-func (queue *Queue) Insert(queuer discord.User, track lavalink.Track) {
+func (queue *Queue) Insert(queuer discord.User, origin snowflake.ID, track lavalink.Track) {
 	queue.QueuedTracks = append(queue.QueuedTracks, QueuedTrack{
-		Queuer: queuer,
-		Track:  track,
+		Queuer:        queuer,
+		Track:         track,
+		OriginChannel: origin,
 	})
-}
-
-type QueueManager struct {
-	Queues map[snowflake.ID]*Queue
-}
-
-func (mgr *QueueManager) Create(serverId snowflake.ID) *Queue {
-	mgr.Queues[serverId] = &Queue{
-		QueuedTracks: []QueuedTrack{},
-		RepeatType:   RepeatTypeNormal,
-	}
-
-	return mgr.Queues[serverId]
-}
-
-func (mgr *QueueManager) GetOrCreate(serverId snowflake.ID) *Queue {
-	queue, ok := mgr.Queues[serverId]
-
-	if !ok {
-		queue = mgr.Create(serverId)
-	}
-
-	return queue
 }
