@@ -26,17 +26,13 @@ type Queue struct {
 	OriginChannel snowflake.ID
 }
 
-// this is unused rn
-func (queue *Queue) NextAndPop() (QueuedTrack, bool) {
-	// empty queue or has reached the end of the queue already
-	if len(queue.QueuedTracks) == 0 {
+func (queue *Queue) PopTo(i int) (QueuedTrack, bool) {
+	if !(i > 0 && i < len(queue.QueuedTracks)) {
 		return QueuedTrack{}, false
 	}
 
-	track := queue.QueuedTracks[0]
-	queue.QueuedTracks = queue.QueuedTracks[1:]
-
-	return track, true
+	queue.QueuedTracks = queue.QueuedTracks[i:]
+	return queue.QueuedTracks[0], true
 }
 
 func (queue *Queue) Insert(queuer discord.User, origin snowflake.ID, track lavalink.Track) {
