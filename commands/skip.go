@@ -8,6 +8,7 @@ import (
 	"github.com/disgoorg/disgolink/v3/lavalink"
 	"github.com/disgoorg/json"
 
+	"github.com/theoutdoorclub/radio/helpers"
 	"github.com/theoutdoorclub/radio/radio"
 	"github.com/theoutdoorclub/radio/shared"
 )
@@ -41,13 +42,7 @@ func init() {
 
 		q, ok := it.Queues[*e.GuildID()]
 		if !ok {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("No player is active").
-				SetEphemeral(true).
-				Build(),
-			)
-
-			return nil
+			return helpers.NoPlayerActiveRespond(e)
 		}
 
 		if count < 1 || count > len(q.QueuedTracks) {
@@ -62,18 +57,23 @@ func init() {
 
 		player := it.Lavalink.Client.Player(*e.GuildID())
 
-		// setting it to a Null track should pass all the checks in OnAddedToQueue i think
-		if err := player.Update(context.Background(), lavalink.WithNullTrack()); err != nil {
+		_, popped := q.PopTo(count)
+		if !popped {
 			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("Something went wrong").
+				SetContent("Cannot skip that many tracks. Queue doesn't have that many.").
 				SetEphemeral(true).
 				Build(),
 			)
 
+			return nil
+		}
+
+		// setting it to a Null track should pass all the checks in OnAddedToQueue i think
+		if err := player.Update(context.Background(), lavalink.WithNullTrack()); err != nil {
+			helpers.GenericErrorRespond(e)
 			return err
 		}
 
-		q.PopTo(count)
 		it.AddedToQueueSignal.Emit(context.Background(), *e.GuildID())
 
 		e.CreateFollowupMessage(discord.NewMessageCreateBuilder().

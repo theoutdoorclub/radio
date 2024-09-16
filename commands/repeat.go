@@ -4,6 +4,7 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 
+	"github.com/theoutdoorclub/radio/helpers"
 	"github.com/theoutdoorclub/radio/radio"
 	"github.com/theoutdoorclub/radio/radio/queue"
 	"github.com/theoutdoorclub/radio/shared"
@@ -42,29 +43,18 @@ func init() {
 	Router.SlashCommand("/repeat", func(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 		e.DeferCreateMessage(true)
 
+		it := e.Ctx.Value(shared.RadioKey).(*radio.Radio)
 		repeatType, ok := data.OptString("type")
-		if !ok {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("Invalid repeat type").
-				SetEphemeral(true).
-				Build(),
-			)
 
-			return nil
+		if err := helpers.VerifyOpt(e, ok, "repeat type"); err != nil {
+			return err
 		}
 
-		it := e.Ctx.Value(shared.RadioKey).(*radio.Radio)
 		player := it.Lavalink.Client.ExistingPlayer(*e.GuildID())
 		q := it.Queues[*e.GuildID()]
 
 		if player == nil || q == nil {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("No player is active").
-				SetEphemeral(true).
-				Build(),
-			)
-
-			return nil
+			return helpers.NoPlayerActiveRespond(e)
 		}
 
 		q.RepeatType = queue.RepeatType(repeatType)

@@ -15,10 +15,10 @@ import (
 
 func OnAddedToQueue(it *radio.Radio) {
 	it.AddedToQueueSignal.AddListener(func(ctx context.Context, guildId snowflake.ID) {
-		shared.Logger.Debug().Msg(guildId.String())
-
 		player := it.Lavalink.Client.ExistingPlayer(guildId)
 		queue, ok := it.Queues[guildId]
+
+		shared.Logger.Debug().Any("queue", queue).Any("track", player.Track()).Msg("Track added to queue")
 
 		// doesn't already have a player, does nothing
 		if player == nil || !ok {
@@ -31,13 +31,22 @@ func OnAddedToQueue(it *radio.Radio) {
 		}
 
 		// player is already playing, does nothing
-		if player.Track() != nil {
+		if queue.IsPlaying {
 			return
 		}
+
+		// player is already playing, does nothing
+		// STOPPING A TRACK DOES NOT SET THIS TO NIL, SO THERE IS NO RELIABLE
+		// WAY TO DETECT WHETHER A TRACK IS PLAYING OR NOT WITH THIS
+		/* 	if player.Track() != nil {
+			return
+		} */
 
 		if err := player.Update(context.Background(), lavalink.WithTrack(queue.QueuedTracks[0].Track)); err != nil {
 			shared.Logger.Err(err).Msg("Failed to play track")
 		}
+
+		queue.IsPlaying = true
 	})
 }
 
@@ -47,6 +56,8 @@ func OnTrackEnded(it *radio.Radio) disgolink.EventListener {
 
 		q := it.Queues[event.GuildID()]
 		endedTrack := q.QueuedTracks[0]
+
+		q.IsPlaying = false
 
 		// track probably died so don't start next
 		if !event.Reason.MayStartNext() {

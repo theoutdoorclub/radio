@@ -19,8 +19,8 @@ func init() {
 		e.DeferCreateMessage(true)
 
 		it := e.Ctx.Value(shared.RadioKey).(*radio.Radio)
-
 		player := it.Lavalink.Client.ExistingPlayer(*e.GuildID())
+
 		if player == nil {
 			return nil
 		}

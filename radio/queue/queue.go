@@ -24,6 +24,7 @@ type Queue struct {
 	QueuedTracks  []QueuedTrack
 	RepeatType    RepeatType
 	OriginChannel snowflake.ID
+	IsPlaying     bool
 }
 
 func (queue *Queue) PopTo(i int) (QueuedTrack, bool) {

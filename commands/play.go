@@ -9,8 +9,8 @@ import (
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/disgolink/v3/lavalink"
 
+	"github.com/theoutdoorclub/radio/helpers"
 	"github.com/theoutdoorclub/radio/radio"
-	"github.com/theoutdoorclub/radio/radio/queue"
 	"github.com/theoutdoorclub/radio/shared"
 )
 
@@ -31,40 +31,16 @@ func init() {
 	})
 
 	Router.SlashCommand("/play", func(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+		e.DeferCreateMessage(false)
+
 		it := e.Ctx.Value(shared.RadioKey).(*radio.Radio)
 		identifier, valid := data.OptString("identifier")
 
-		if !valid {
-			return e.CreateMessage(discord.NewMessageCreateBuilder().
-				SetContent("No identifier was provided").
-				SetEphemeral(true).
-				Build(),
-			)
+		if err := helpers.VerifyOpt(e, valid, "identifier"); err != nil {
+			return err
 		}
 
-		e.DeferCreateMessage(true)
-
-		// join vc
-		voiceState, ok := it.Client.Caches().VoiceState(*e.GuildID(), e.User().ID)
-
-		if !ok {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("You are not in a voice channel").
-				SetEphemeral(true).
-				Build(),
-			)
-
-			return nil
-		}
-
-		err := it.Client.UpdateVoiceState(context.TODO(), *e.GuildID(), voiceState.ChannelID, false, true)
-		if err != nil {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("Failed to join voice channel plz check permissions").
-				SetEphemeral(true).
-				Build(),
-			)
-
+		if err := helpers.JoinVC(e); err != nil {
 			return err
 		}
 
@@ -75,25 +51,12 @@ func init() {
 		defer cancelFn()
 
 		if err != nil {
-			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-				SetContent("Something went wrong while loading").
-				SetEphemeral(true).
-				Build(),
-			)
-
+			helpers.LoadingErrorRespond(e)
 			return err
 		}
 
-		q, ok := it.Queues[*e.GuildID()]
-		if !ok {
-			q = &queue.Queue{
-				QueuedTracks:  []queue.QueuedTrack{},
-				RepeatType:    queue.RepeatTypeNormal,
-				OriginChannel: e.Channel().ID(),
-			}
-
-			it.Queues[*e.GuildID()] = q
-		}
+		// do not question the deref thats what autocomplete does
+		q := helpers.GetQueue(it, e.Channel().ID(), *e.GuildID())
 
 		// wtf this is some black magic shit
 		switch d := loadResult.Data.(type) {
@@ -111,7 +74,6 @@ func init() {
 		case lavalink.Empty:
 			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
 				SetContent("Nothing was found for this identifier").
-				SetEphemeral(true).
 				Build(),
 			)
 
@@ -120,7 +82,6 @@ func init() {
 		case lavalink.Exception:
 			e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
 				SetContent("Something went wrong while loading").
-				SetEphemeral(true).
 				Build(),
 			)
 
@@ -131,8 +92,8 @@ func init() {
 		it.AddedToQueueSignal.Emit(context.Background(), *e.GuildID())
 
 		e.CreateFollowupMessage(discord.NewMessageCreateBuilder().
-			SetContent("hey it worked").
-			SetEphemeral(true).
+			SetAllowedMentions(&discord.AllowedMentions{RepliedUser: true}).
+			SetContent("m").
 			Build(),
 		)
 
