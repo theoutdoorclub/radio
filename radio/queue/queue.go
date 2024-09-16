@@ -26,6 +26,7 @@ type Queue struct {
 	OriginChannel snowflake.ID
 }
 
+// this is unused rn
 func (queue *Queue) NextAndPop() (QueuedTrack, bool) {
 	// empty queue or has reached the end of the queue already
 	if len(queue.QueuedTracks) == 0 {

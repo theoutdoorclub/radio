@@ -118,6 +118,8 @@ func main() {
 		AddedToQueueSignal: signals.New[snowflake.ID](),
 	}
 
+	// these 4 functions are just parts of the main func
+	// i extracted to make main less cluttered lol,,,
 	parseConfig(it)
 	createClient(it)
 	syncCommands(it)

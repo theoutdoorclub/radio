@@ -43,10 +43,15 @@ func OnAddedToQueue(it *radio.Radio) {
 
 func OnTrackEnded(it *radio.Radio) disgolink.EventListener {
 	return disgolink.NewListenerFunc(func(player disgolink.Player, event lavalink.TrackEndEvent) {
+		shared.Logger.Debug().Any("player", player).Any("event", event).Msg("Track ended")
+
 		q := it.Queues[event.GuildID()]
 		endedTrack := q.QueuedTracks[0]
 
-		shared.Logger.Debug().Any("player", player).Any("event", event).Msg("Track ended")
+		// track probably died so don't start next
+		if !event.Reason.MayStartNext() {
+			return
+		}
 
 		it.Client.Rest().CreateMessage(
 			endedTrack.OriginChannel,
@@ -58,11 +63,6 @@ func OnTrackEnded(it *radio.Radio) disgolink.EventListener {
 				).
 				Build(),
 		)
-
-		// track probably died so don't start next
-		if !event.Reason.MayStartNext() {
-			return
-		}
 
 		// player is paused, does nothing
 		if player.Paused() {
